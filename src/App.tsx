@@ -16,7 +16,7 @@ interface Note {
   user_id: string;
   user_name: string;
   wechat_id?: string;
-  avatar_url?: string;  // 新增：头像 URL
+  avatar_url?: string;
   created_at: string;
 }
 
@@ -35,7 +35,7 @@ export default function App() {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [selectedUserName, setSelectedUserName] = useState<string>('');
   const [selectedWechatId, setSelectedWechatId] = useState<string>('');
-  const [selectedAvatarUrl, setSelectedAvatarUrl] = useState<string>(''); // 个人主页头像
+  const [selectedAvatarUrl, setSelectedAvatarUrl] = useState<string>('');
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -151,7 +151,7 @@ export default function App() {
       user_id: user.id,
       user_name: user.user_metadata?.full_name || user.email?.split('@')[0] || '书友',
       wechat_id: wechatId.trim() || null,
-      avatar_url: selectedUserId === user.id ? selectedAvatarUrl : undefined  // 保持当前头像
+      avatar_url: selectedUserId === user.id ? selectedAvatarUrl : undefined
     });
     setBook('');
     setContent('');
@@ -159,13 +159,13 @@ export default function App() {
     fetchNotes();
   };
 
-  // 上传头像
+  // 上传头像（修复版：放到 uid 文件夹）
   const uploadAvatar = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0 || !user) return;
 
     const file = e.target.files[0];
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${user.id}.${fileExt}`;
+    const fileExt = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+    const fileName = `${user.id}/avatar.${fileExt}`;
 
     const { error: uploadError } = await supabase.storage
       .from('avatars')
@@ -173,6 +173,7 @@ export default function App() {
 
     if (uploadError) {
       alert('上传失败: ' + uploadError.message);
+      console.error(uploadError);
       return;
     }
 
@@ -180,14 +181,20 @@ export default function App() {
       .from('avatars')
       .getPublicUrl(fileName);
 
-    // 更新所有笔记的 avatar_url
-    await supabase.from('notes')
+    const { error: updateError } = await supabase
+      .from('notes')
       .update({ avatar_url: publicUrl })
       .eq('user_id', user.id);
 
+    if (updateError) {
+      alert('更新头像 URL 失败: ' + updateError.message);
+      console.error(updateError);
+      return;
+    }
+
     setSelectedAvatarUrl(publicUrl);
     alert('头像上传成功！');
-    fetchUserNotes(user.id, selectedUserName || user.email?.split('@')[0], selectedWechatId, publicUrl);
+    fetchUserNotes(user.id, selectedUserName || user.email?.split('@')[0] || '书友', selectedWechatId, publicUrl);
     fetchNotes();
   };
 
@@ -252,7 +259,7 @@ export default function App() {
                 className="w-32 h-32 rounded-full object-cover mb-4 border-4 border-gray-200"
               />
               {user && selectedUserId === user.id && (
-                <label className="cursor-pointer bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                <label className="cursor-pointer bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">
                   上传新头像
                   <input type="file" accept="image/*" onChange={uploadAvatar} className="hidden" />
                 </label>
@@ -270,7 +277,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 登录弹窗（保持不变） */}
+        {/* 登录弹窗 */}
         {showAuth && !user && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white p-8 rounded-lg shadow-xl max-w-sm w-full">
@@ -297,7 +304,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 发布表单 */}
+        {/* 发布表单（仅首页） */}
         {!selectedUserId && (
           <form onSubmit={handleSubmit} className="bg-white p-6 rounded-lg shadow mb-8">
             <input type="text" placeholder="书名" value={book} onChange={e => setBook(e.target.value)} className="w-full px-4 py-2 border rounded mb-4 focus:outline-none focus:border-blue-500" required />
