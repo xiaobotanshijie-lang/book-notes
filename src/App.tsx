@@ -21,6 +21,7 @@ interface Note {
 
 export default function App() {
   const [notes, setNotes] = useState<(Note & { comments: Comment[] })[]>([]);
+  const [userNotes, setUserNotes] = useState<(Note & { comments: Comment[] })[]>([]); // 个人主页笔记
   const [book, setBook] = useState('');
   const [content, setContent] = useState('');
   const [wechatId, setWechatId] = useState('');
@@ -30,6 +31,9 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [showAuth, setShowAuth] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null); // 个人主页模式
+  const [selectedUserName, setSelectedUserName] = useState<string>(''); // 显示用户名
+  const [selectedWechatId, setSelectedWechatId] = useState<string>(''); // 显示微信号
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -69,6 +73,36 @@ export default function App() {
       })
     );
     setNotes(notesWithComments);
+    setLoading(false);
+  };
+
+  // 加载个人主页笔记
+  const fetchUserNotes = async (userId: string, userName: string, wechatId?: string) => {
+    setLoading(true);
+    const { data: notesData } = await supabase
+      .from('notes')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    const notesWithComments = await Promise.all(
+      (notesData || []).map(async (note: any) => {
+        const { data: comments } = await supabase
+          .from('comments')
+          .select('*')
+          .eq('note_id', note.id)
+          .order('created_at', { ascending: false });
+        return { 
+          ...note, 
+          user_name: note.user_name || '匿名读者',
+          comments: comments || [] 
+        };
+      })
+    );
+    setUserNotes(notesWithComments);
+    setSelectedUserId(userId);
+    setSelectedUserName(userName);
+    setSelectedWechatId(wechatId || '');
     setLoading(false);
   };
 
@@ -121,7 +155,7 @@ export default function App() {
 
   const handleLike = async (id: number, currentLikes: number) => {
     await supabase.from('notes').update({ likes: currentLikes + 1 }).eq('id', id);
-    fetchNotes();
+    selectedUserId ? fetchUserNotes(selectedUserId, selectedUserName, selectedWechatId) : fetchNotes();
   };
 
   const addComment = async (noteId: number, author: string, text: string) => {
@@ -131,14 +165,33 @@ export default function App() {
       author: author.trim() || (user ? (user.email?.split('@')[0] || '书友') : '匿名读者'),
       text: text.trim(),
     });
+    selectedUserId ? fetchUserNotes(selectedUserId, selectedUserName, selectedWechatId) : fetchNotes();
+  };
+
+  // 返回首页
+  const goHome = () => {
+    setSelectedUserId(null);
+    setSelectedUserName('');
+    setSelectedWechatId('');
     fetchNotes();
   };
+
+  // 当前显示的笔记列表
+  const currentNotes = selectedUserId ? userNotes : notes;
 
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4">
       <div className="max-w-2xl mx-auto">
+        {/* 顶部栏 */}
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-800">读书笔记分享</h1>
+          {selectedUserId ? (
+            <div className="flex items-center gap-4">
+              <button onClick={goHome} className="text-blue-600 hover:underline">← 返回首页</button>
+              <h1 className="text-3xl font-bold text-gray-800">{selectedUserName} 的笔记</h1>
+            </div>
+          ) : (
+            <h1 className="text-3xl font-bold text-gray-800">读书笔记分享</h1>
+          )}
           {user ? (
             <div className="flex items-center gap-4">
               <span className="text-sm text-gray-600">欢迎，{user.email?.split('@')[0]}</span>
@@ -153,7 +206,22 @@ export default function App() {
           )}
         </div>
 
-        {/* 登录弹窗 */}
+        {/* 个人主页头部 */}
+        {selectedUserId && (
+          <div className="bg-white p-6 rounded-lg shadow mb-8 text-center">
+            <h2 className="text-2xl font-bold text-gray-800 mb-2">{selectedUserName}</h2>
+            {selectedWechatId ? (
+              <div className="text-lg text-green-600 font-medium">
+                微信: {selectedWechatId}（可复制添加）
+              </div>
+            ) : (
+              <div className="text-gray-500">暂未公开微信号</div>
+            )}
+            <p className="text-sm text-gray-500 mt-2">共 {userNotes.length} 条笔记</p>
+          </div>
+        )}
+
+        {/* 登录弹窗（保持不变） */}
         {showAuth && !user && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white p-8 rounded-lg shadow-xl max-w-sm w-full">
@@ -197,47 +265,56 @@ export default function App() {
           </div>
         )}
 
-        {/* 发布表单 */}
-        <form onSubmit={handleSubmit} className="bg-white p-6 rounded-lg shadow mb-8">
-          <input
-            type="text"
-            placeholder="书名"
-            value={book}
-            onChange={e => setBook(e.target.value)}
-            className="w-full px-4 py-2 border rounded mb-4 focus:outline-none focus:border-blue-500"
-            required
-          />
-          <textarea
-            placeholder={user ? "写下你的读书笔记..." : "请先登录后再发布笔记"}
-            value={content}
-            onChange={e => setContent(e.target.value)}
-            rows={4}
-            className="w-full px-4 py-2 border rounded mb-4 focus:outline-none focus:border-blue-500"
-            required
-            disabled={!user}
-          />
-          <input
-            type="text"
-            placeholder="你的微信号（可选，方便书友加你）"
-            value={wechatId}
-            onChange={e => setWechatId(e.target.value)}
-            className="w-full px-4 py-2 border rounded mb-4 focus:outline-none focus:border-green-500 text-green-700 placeholder-green-400"
-          />
-          <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700" disabled={!user}>
-            发布笔记
-          </button>
-        </form>
+        {/* 发布表单（仅首页显示） */}
+        {!selectedUserId && (
+          <form onSubmit={handleSubmit} className="bg-white p-6 rounded-lg shadow mb-8">
+            <input
+              type="text"
+              placeholder="书名"
+              value={book}
+              onChange={e => setBook(e.target.value)}
+              className="w-full px-4 py-2 border rounded mb-4 focus:outline-none focus:border-blue-500"
+              required
+            />
+            <textarea
+              placeholder={user ? "写下你的读书笔记..." : "请先登录后再发布笔记"}
+              value={content}
+              onChange={e => setContent(e.target.value)}
+              rows={4}
+              className="w-full px-4 py-2 border rounded mb-4 focus:outline-none focus:border-blue-500"
+              required
+              disabled={!user}
+            />
+            <input
+              type="text"
+              placeholder="你的微信号（可选，方便书友加你）"
+              value={wechatId}
+              onChange={e => setWechatId(e.target.value)}
+              className="w-full px-4 py-2 border rounded mb-4 focus:outline-none focus:border-green-500 text-green-700 placeholder-green-400"
+            />
+            <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700" disabled={!user}>
+              发布笔记
+            </button>
+          </form>
+        )}
 
         {/* 笔记列表 */}
         {loading ? (
           <p className="text-center text-gray-500">加载中...</p>
+        ) : currentNotes.length === 0 ? (
+          <p className="text-center text-gray-500">暂无笔记</p>
         ) : (
-          notes.map(note => (
+          currentNotes.map(note => (
             <div key={note.id} className="bg-white p-6 rounded-lg shadow mb-6">
               <div className="flex justify-between items-start mb-2">
                 <h3 className="text-xl font-semibold text-gray-800">{note.book}</h3>
                 <div className="text-right">
-                  <span className="text-sm text-gray-500 block">by {note.user_name}</span>
+                  <button
+                    onClick={() => fetchUserNotes(note.user_id, note.user_name, note.wechat_id)}
+                    className="text-sm font-medium text-blue-600 hover:underline"
+                  >
+                    {note.user_name}
+                  </button>
                   {note.wechat_id && (
                     <span className="text-sm text-green-600 font-medium block">
                       微信: {note.wechat_id}（可复制添加）
@@ -257,7 +334,7 @@ export default function App() {
               </div>
 
               <div className="border-t pt-4">
-                <CommentForm noteId={note.id} onComment={fetchNotes} user={user} />
+                <CommentForm noteId={note.id} onComment={selectedUserId ? () => fetchUserNotes(selectedUserId, selectedUserName, selectedWechatId) : fetchNotes} user={user} />
                 {note.comments.map(c => (
                   <div key={c.id} className="mt-3 pl-4 border-l-2 border-gray-200">
                     <p className="text-sm font-medium">{c.author}</p>
