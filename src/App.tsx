@@ -36,6 +36,7 @@ export default function App() {
   const [selectedUserName, setSelectedUserName] = useState<string>('');
   const [selectedWechatId, setSelectedWechatId] = useState<string>('');
   const [selectedAvatarUrl, setSelectedAvatarUrl] = useState<string>('');
+  const [sortMode, setSortMode] = useState<'latest' | 'hot'>('latest'); // 新增：排序模式
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -55,10 +56,17 @@ export default function App() {
 
   const fetchNotes = async () => {
     setLoading(true);
-    const { data: notesData } = await supabase
+    let query = supabase
       .from('notes')
-      .select('*')
-      .order('created_at', { ascending: false });
+      .select('*');
+
+    if (sortMode === 'hot') {
+      query = query.order('likes', { ascending: false }).order('created_at', { ascending: false });
+    } else {
+      query = query.order('created_at', { ascending: false });
+    }
+
+    const { data: notesData } = await query;
 
     const notesWithComments = await Promise.all(
       (notesData || []).map(async (note: any) => {
@@ -79,13 +87,20 @@ export default function App() {
     setLoading(false);
   };
 
+  // 每次切换排序模式时重新加载
+  useEffect(() => {
+    if (!selectedUserId) {
+      fetchNotes();
+    }
+  }, [sortMode]);
+
   const fetchUserNotes = async (userId: string, userName: string, wechatId?: string, avatarUrl?: string) => {
     setLoading(true);
     const { data: notesData } = await supabase
       .from('notes')
       .select('*')
       .eq('user_id', userId)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false }); // 个人主页固定按时间
 
     const notesWithComments = await Promise.all(
       (notesData || []).map(async (note: any) => {
@@ -159,7 +174,7 @@ export default function App() {
     fetchNotes();
   };
 
-  // 上传头像（修复版：放到 uid 文件夹）
+  // 上传头像（保持不变）
   const uploadAvatar = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0 || !user) return;
 
@@ -218,6 +233,7 @@ export default function App() {
     setSelectedUserName('');
     setSelectedWechatId('');
     setSelectedAvatarUrl('');
+    setSortMode('latest'); // 返回首页默认最新
     fetchNotes();
   };
 
@@ -233,7 +249,23 @@ export default function App() {
               <h1 className="text-3xl font-bold text-gray-800">{selectedUserName} 的笔记</h1>
             </div>
           ) : (
-            <h1 className="text-3xl font-bold text-gray-800">读书笔记分享</h1>
+            <div className="flex items-center gap-6">
+              <h1 className="text-3xl font-bold text-gray-800">读书笔记分享</h1>
+              <div className="flex gap-2 bg-gray-200 p-1 rounded-lg">
+                <button
+                  onClick={() => setSortMode('latest')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition ${sortMode === 'latest' ? 'bg-white shadow' : 'text-gray-600'}`}
+                >
+                  最新
+                </button>
+                <button
+                  onClick={() => setSortMode('hot')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition ${sortMode === 'hot' ? 'bg-white shadow' : 'text-gray-600'}`}
+                >
+                  最热 🔥
+                </button>
+              </div>
+            </div>
           )}
           {user ? (
             <div className="flex items-center gap-4">
@@ -249,7 +281,7 @@ export default function App() {
           )}
         </div>
 
-        {/* 个人主页头部 */}
+        {/* 个人主页头部（保持不变） */}
         {selectedUserId && (
           <div className="bg-white p-6 rounded-lg shadow mb-8 text-center">
             <div className="flex flex-col items-center">
@@ -277,7 +309,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 登录弹窗 */}
+        {/* 登录弹窗、发布表单、笔记列表保持不变 */}
         {showAuth && !user && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white p-8 rounded-lg shadow-xl max-w-sm w-full">
@@ -304,7 +336,6 @@ export default function App() {
           </div>
         )}
 
-        {/* 发布表单（仅首页） */}
         {!selectedUserId && (
           <form onSubmit={handleSubmit} className="bg-white p-6 rounded-lg shadow mb-8">
             <input type="text" placeholder="书名" value={book} onChange={e => setBook(e.target.value)} className="w-full px-4 py-2 border rounded mb-4 focus:outline-none focus:border-blue-500" required />
@@ -316,7 +347,6 @@ export default function App() {
           </form>
         )}
 
-        {/* 笔记列表 */}
         {loading ? (
           <p className="text-center text-gray-500">加载中...</p>
         ) : currentNotes.length === 0 ? (
