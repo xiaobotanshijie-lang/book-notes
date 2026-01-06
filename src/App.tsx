@@ -14,7 +14,8 @@ interface Note {
   content: string;
   likes: number;
   user_id: string;
-  user_name: string;  // 新增：作者名字
+  user_name: string;
+  wechat_id?: string;  // 新增：微信号（可选）
   created_at: string;
 }
 
@@ -22,8 +23,9 @@ export default function App() {
   const [notes, setNotes] = useState<(Note & { comments: Comment[] })[]>([]);
   const [book, setBook] = useState('');
   const [content, setContent] = useState('');
+  const [wechatId, setWechatId] = useState('');  // 新增：微信号输入
   const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState<any>(null);  // 当前登录用户
+  const [user, setUser] = useState<any>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
@@ -35,7 +37,7 @@ export default function App() {
       setUser(session?.user ?? null);
     });
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session)n => {
       setUser(session?.user ?? null);
     });
 
@@ -97,7 +99,7 @@ export default function App() {
     setUser(null);
   };
 
-  // 发布笔记（需登录）
+  // 发布笔记
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) {
@@ -112,10 +114,12 @@ export default function App() {
       content,
       likes: 0,
       user_id: user.id,
-      user_name: user.user_metadata?.full_name || user.email?.split('@')[0] || '书友'
+      user_name: user.user_metadata?.full_name || user.email?.split('@')[0] || '书友',
+      wechat_id: wechatId.trim() || null  // 保存微信号
     });
     setBook('');
     setContent('');
+    setWechatId('');  // 清空微信号输入框
     fetchNotes();
   };
 
@@ -128,7 +132,7 @@ export default function App() {
     if (!text.trim()) return;
     await supabase.from('comments').insert({
       note_id: noteId,
-      author: author.trim() || (user ? (user.user_metadata?.full_name || user.email?.split('@')[0]) : '匿名读者'),
+      author: author.trim() || (user ? (user.email?.split('@')[0] || '书友') : '匿名读者'),
       text: text.trim(),
     });
     fetchNotes();
@@ -153,7 +157,7 @@ export default function App() {
           )}
         </div>
 
-        {/* 登录弹窗 */}
+        {/* 登录弹窗（保持不变） */}
         {showAuth && !user && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white p-8 rounded-lg shadow-xl max-w-sm w-full">
@@ -197,17 +201,31 @@ export default function App() {
           </div>
         )}
 
-        {/* 发布表单（需登录） */}
+        {/* 发布表单 - 新增微信号输入框 */}
         <form onSubmit={handleSubmit} className="bg-white p-6 rounded-lg shadow mb-8">
           <input
-            type="text" placeholder="书名" value={book} onChange={e => setBook(e.target.value)}
-            className="w-full px-4 py-2 border rounded mb-4 focus:outline-none focus:border-blue-500" required
+            type="text"
+            placeholder="书名"
+            value={book}
+            onChange={e => setBook(e.target.value)}
+            className="w-full px-4 py-2 border rounded mb-4 focus:outline-none focus:border-blue-500"
+            required
           />
           <textarea
             placeholder={user ? "写下你的读书笔记..." : "请先登录后再发布笔记"}
-            value={content} onChange={e => setContent(e.target.value)}
-            rows={4} className="w-full px-4 py-2 border rounded mb-4 focus:outline-none focus:border-blue-500" required
+            value={content}
+            onChange={e => setContent(e.target.value)}
+            rows={4}
+            className="w-full px-4 py-2 border rounded mb-4 focus:outline-none focus:border-blue-500"
+            required
             disabled={!user}
+          />
+          <input
+            type="text"
+            placeholder="你的微信号（可选，方便书友加你）"
+            value={wechatId}
+            onChange={e => setWechatId(e.target.value)}
+            className="w-full px-44 py-2 border rounded mb-4 focus:outline-none focus:border-green-500 text-green-700 placeholder-green-400"
           />
           <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700" disabled={!user}>
             发布笔记
@@ -215,11 +233,18 @@ export default function App() {
         </form>
 
         {/* 笔记列表 */}
-        {loading ? <p className="text-center text-gray-500">加载加载中...</p> : notes.map(note => (
+        {loading ? <p className="text-center text-gray-500">加载中...</p> : notes.map(note => (
           <div key={note.id} className="bg-white p-6 rounded-lg shadow mb-6">
             <div className="flex justify-between items-start mb-2">
               <h3 className="text-xl font-semibold text-gray-800">{note.book}</h3>
-              <span className="text-sm text-gray-500">by {note.user_name}</span>
+              <div className="text-right">
+                <span className="text-sm text-gray-500 block">by {note.user_name}</span>
+                {note.wechat_id && (
+                  <span className="text-sm text-green-600 font-medium">
+                    微信: {note.wechat_id}（可复制添加）
+                  </span>
+                )}
+              </div>
             </div>
             <p className="text-gray-700 mb-4 whitespace-pre-wrap">{note.content}</p>
             <div className="flex items-center gap-4 mb-4">
